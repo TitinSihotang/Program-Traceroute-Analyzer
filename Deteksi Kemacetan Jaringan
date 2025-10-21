@@ -1,0 +1,81 @@
+import subprocess
+import platform
+import re
+
+def run_traceroute(host):
+    system = platform.system().lower()
+    print(f"\nMenjalankan traceroute ke {host}...\n")
+
+    if "windows" in system:
+        command = ["tracert", host]
+        try:
+            return subprocess.check_output(command, stderr=subprocess.STDOUT, text=True)
+        except subprocess.CalledProcessError as e:
+            return e.output
+    else:
+        for cmd in (["traceroute", "-n", host], ["traceroute", host]):
+            try:
+                result = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
+                return result
+            except subprocess.CalledProcessError as e:
+                if "invalid option" in e.output.lower():
+                    continue
+                return e.output
+            except FileNotFoundError:
+                print("Perintah traceroute tidak ditemukan. Pastikan sudah terinstal.")
+                return ""
+
+    return ""
+
+def analisa_kemacetan(output):
+    print("\nMenganalisis hasil traceroute...\n")
+
+    hops = []
+    for line in output.splitlines():
+        times = re.findall(r"(\d+\.?\d*)\s*ms", line)
+        if times:
+            avg_time = sum(map(float, times)) / len(times)
+            hops.append(avg_time)
+        elif "*" in line:
+            hops.append(None)
+
+    if not hops:
+        print("Tidak ada data latency ditemukan.")
+        return
+
+    print("No | Delay (ms) | Keterangan")
+    print("--------------------------------")
+    for i, t in enumerate(hops, start=1):
+        if t is None:
+            print(f"{i:<3}| Timeout   | Hop tidak merespons")
+        elif t > 150:
+            print(f"{i:<3}| {t:>8.2f} | Kemungkinan macet (latency tinggi)")
+        elif t > 80:
+            print(f"{i:<3}| {t:>8.2f} | Sedikit lambat")
+        else:
+            print(f"{i:<3}| {t:>8.2f} | Normal")
+
+    valid_delays = [t for t in hops if t is not None]
+    if valid_delays:
+        max_delay = max(valid_delays)
+        hop_terlambat = hops.index(max_delay) + 1
+        print(f"\nKemacetan terbesar di hop ke-{hop_terlambat} (≈ {max_delay:.2f} ms)")
+    else:
+        print("\nTidak ditemukan kemacetan signifikan.")
+
+def main():
+    print("=== Traceroute Analyzer – Deteksi Kemacetan Jaringan ===")
+    host = input("Masukkan nama domain atau IP (contoh: 8.8.8.8): ").strip()
+    if not host:
+        print("Host tidak boleh kosong.")
+        return
+
+    output = run_traceroute(host)
+    if output:
+        print(output)
+        analisa_kemacetan(output)
+    else:
+        print("Tidak ada output dari traceroute.")
+
+if __name__ == "__main__":
+    main()
